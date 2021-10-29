@@ -12,8 +12,7 @@ CARP (CircRNA identification by A-tailing RNase R and Pseudo-reference alignment
 
 Usage:  CARP <Command>
 
-Command: 
-          
+Command:   
    RNAseq            RNA-seq data alignment
    DEgene            Gene expression quantification and differential expression analysis
    CIRCexplorer2     circRNA identification by CIRCexplorer2
