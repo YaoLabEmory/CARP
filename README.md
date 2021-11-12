@@ -2,7 +2,7 @@
 
 ### CircRNA identification by A-tailing RNase R and Pseudo-reference alignment (CARP)
 
-Circular RNAs (circRNAs) are a large class of single-stranded, stable, functional RNAs in mammalian cells having a closed-loop structure. CircRNAs occur through the covalent joining of a downstream 3′ splice donor to an upstream 5′ splice acceptor via a previously underappreciated pre-mRNA splicing mechanism, known as "back-splicing".
+Circular RNAs (circRNAs) are a large class of single-stranded, stable, functional RNAs in mammalian cells having a closed-loop structure. CircRNAs occur through the covalent joining of a downstream 5′ splice donor to an upstream 3′ splice acceptor via a previously underappreciated pre-mRNA splicing mechanism, known as "back-splicing".
 
 CARP is an intergrated 21-module computational framework designed for circRNA analysis, including circRNA identification and quantification, DE analysis, circRNA full length construction and circRNA-miRNA-mRNA network analysis based on A-tailing RNase R treated/untreated RNA-seq data.
 
