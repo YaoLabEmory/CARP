@@ -1,0 +1,22 @@
+#!/usr/bin/bash
+CARP RNAseq
+CARP DEgene
+CARP CIRCexplorer2
+CARP CIRIquant
+CARP findcirc
+CARP MapSplice
+CARP PseudoRef
+CARP Mapping
+CARP BSJreads
+CARP Remap
+CARP ReadsCount
+CARP Confidentcirc
+CARP CircAS
+CARP CircIsoformSwitch
+CARP DEcirc
+CARP CircCluster
+CARP CircNetwork
+CARP CircRBP
+CARP Sailor
+CARP CircAtoI
+CARP miRTarget

@@ -1,0 +1,11 @@
+thread	16
+genome_index	hg38
+MapSplicedir	/projects/compbio/users/byao5/anaconda3/envs/MapSplice/bin
+genegtf	/projects/compbio/users/byao5/DownloadData/MapSpliceGeneAnnotation/Homo_sapiens.GRCh38.99.gtf
+genomedir	/projects/compbio/users/byao5/GenomeIndex/iGenome/Homo_sapiens/UCSC/hg38/Sequence/Chromosomes
+bowtieIndex	/projects/compbio/users/byao5/GenomeIndex/iGenome/Homo_sapiens/UCSC/hg38/Sequence/BowtieIndex/genome
+bowtie2Index	/projects/compbio/users/byao5/GenomeIndex/iGenome/Homo_sapiens/UCSC/hg38/Sequence/Bowtie2Index/genome
+gtf	/projects/compbio/users/byao5/GenomeIndex/GeneAnnotation/hg38.genes.gtf
+genome	/projects/compbio/users/byao5/GenomeIndex/iGenome/Homo_sapiens/UCSC/hg38/Sequence/WholeGenomeFasta/genome.fa
+length	8
+miR_Family_Info	/projects/compbio/users/byao5/Software/targetscan_70/human/miR_Family_Info_hsa.txt

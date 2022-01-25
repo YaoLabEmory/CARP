@@ -1,0 +1,436 @@
+#!/usr/bin/perl
+
+#Read in parameter for CARP
+open FIG,"<./bin/config";
+while(<FIG>){
+   chomp;
+   @_=split(/\t/);
+   $config{$_[0]}=$_[1];
+}
+close FIG;
+
+$thread=$config{"thread"};
+$genome_index=$config{"genome_index"};
+$MapSplicedir=$config{"MapSplicedir"};
+$genegtf=$config{"genegtf"};
+$genomedir=$config{"genomedir"};
+$bowtieIndex=$config{"bowtieIndex"};
+$bowtie2Index=$config{"bowtie2Index"};
+$length=$config{"length"};
+$gtf=$config{"gtf"};
+$miR_Family_Info=$config{"miR_Family_Info"};
+
+#Read in samples name
+open FIG,"<./Rawdata/sample_names_RM.txt";
+while(<FIG>){
+   chomp;
+   push(@sample_RM,$_);
+}
+close FIG;
+open FIG,"<./Rawdata/sample_names_AR.txt";
+while(<FIG>){
+   chomp;
+   push(@sample_AR,$_);
+}
+close FIG;
+open FIG,"<./Rawdata/condition";
+while(<FIG>){
+   chomp;
+   push(@condition,$_);
+}
+close FIG;
+
+parse_command_line();
+
+sub RNAseq(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+	   system("tophat2 -p $thread -G $gtf -o RNAseq/${sample} $bowtie2Index ./Rawdata/${sample}_1.fq.gz ./Rawdata/${sample}_2.fq.gz");
+	   system("samtools sort RNAseq/$sample/accepted_hits.bam >RNAseq/sortedbam/${sample}.sorted.bam");
+	   system("bedtools bamtobed -split -i RNAseq/sortedbam/${sample}.sorted.bam > RNAseq/sortedbed/${sample}.bed");
+	   system("bedtools sort -i RNAseq/sortedbed/${sample}.bed > RNAseq/sortedbed/$sample.sorted.bed");
+   }
+   system("cat Rawdata/sample_names_RM.txt Rawdata/sample_names_AR.txt >Rawdata/sample_names.txt");
+   system("bin/RNA_SummaryTable.sh --out_dir RNAseq --sample_txt Rawdata/sample_names.txt");
+}
+
+sub DEgene(){
+   $control=$case="";
+   for($i=0;$i<@condition;$i++){
+      if($condition[$i] eq "case"){
+         $case="$case".",$sample_RM[$i]/accepted_hits.bam";
+      }
+      elsif($condition[$i] eq "control"){
+         $control="$control".",$sample_RM[$i]/accepted_hits.bam";
+      }
+      else{;}
+   }
+   $case=substr($case,1,length($case));
+   $control=substr($control,1,length($control));
+   chdir "RNAseq";
+   system("cuffdiff -q -p ${thread} -o Cuffdiff -L Control,Case $gtf $control $case");
+   chdir "../";
+}
+
+sub CIRCexplore2(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      system("CIRCexplorer2.sh --data_dir ./Rawdata --out_dir ./CIRCexplorer2 --genome_index $genome_index --sample $sample --thread $thread");
+   }
+}
+
+sub CIRIquant(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      open OUT,">$sample.CIRI.sh";
+      print OUT "#!/usr/bin/bash\n";
+      print OUT "source ~/.bash_profile\n";
+      print OUT "conda activate\n";
+      print OUT "CIRIquant -o ./CIRIquant/${sample} -p ${sample} -t $thread --config ./bin/$genome_index -1 ./Rawdata/${sample}_1.fq.gz -2 ./Rawdata/${sample}_2.fq.gz\n";
+      system("bash $sample.CIRI.sh");
+      close OUT;
+      system("rm $sample.CIRI.sh");
+   }
+}
+
+sub findcirc(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      system("findcirc.sh --data_dir ../Rawdata --out_dir findcirc --genome_index $genome_index --sample $sample");
+   }
+}
+
+sub MapSplice(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      open OUT,">$sample.MapSplice.sh";
+      system("cp Rawdata/$sample*fq.gz Rawdata/fastq");
+      system("gzip -d Rawdata/fastq/$sample*fq.gz");
+      print OUT "#!/usr/bin/bash\n";
+      print OUT "source ~/.bash_profile\n";
+      print OUT "conda activate /projects/compbio/users/byao5/anaconda3/envs/MapSplice\n";
+      print OUT "python $MapSplicedir/mapsplice.py -p $thread --bam --fusion-non-canonical --gene-gtf $genegtf --min-fusion-distance 200 -o MapSplice/$sample -c $genomedir -x $bowtieIndex -1 ./Rawdata/fastq/${sample}_1.fq -2 ./Rawdata/fastq/${sample}_2.fq\n";
+      system("bash $sample.MapSplice.sh");
+      close OUT;
+      system("rm $sample.MapSplice.sh");
+   }
+}
+
+sub Mapping(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      system("bowtie2 -p $thread -x ./MergeCirc/circlist/junc -U ./Rawdata/${sample}_1.fq.gz -S ./MergeCirc/juncmap/${sample}_1.sam");
+      system("bowtie2 -p $thread -x ./MergeCirc/circlist/junc -U ./Rawdata/${sample}_2.fq.gz -S ./MergeCirc/juncmap/${sample}_2.sam");
+      system("bowtie2 -p $thread -x ./MergeCirc/circlist/last -1 ./Rawdata/${sample}_1.fq.gz -2 ./Rawdata/${sample}_2.fq.gz -S ./MergeCirc/linearlastmap/$sample.sam");
+   }
+}
+
+sub BSJreads(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      system("bam2fastx -q -s MergeCirc/juncmap/${sample}_1.sam -M -o MergeCirc/juncmap/${sample}_1.fq");
+      system("bam2fastx -q -s MergeCirc/juncmap/${sample}_2.sam -M -o MergeCirc/juncmap/${sample}_2.fq");
+      system("samtools view -F 4 -o MergeCirc/juncmap/${sample}_1.mapped.sam MergeCirc/juncmap/${sample}_1.sam");
+      system("samtools view -F 4 -o MergeCirc/juncmap/${sample}_2.mapped.sam MergeCirc/juncmap/${sample}_2.sam");
+      system("perl ./bin/juncreads-length.pl -i $sample -l $length");
+   }
+}
+
+sub Remap(@_){
+   my @sample=@_;
+   foreach $sample (@sample){
+      system("bowtie2 --end-to-end -p $thread -x $bowtie2Index -U MergeCirc/juncmap/${sample}_1.candjuncreads-${length}bp.fq -S MergeCirc/juncreads2genome-${length}bp/${sample}_1.sam");
+      system("bowtie2 --end-to-end -p $thread -x $bowtie2Index -U MergeCirc/juncmap/${sample}_2.candjuncreads-${length}bp.fq -S MergeCirc/juncreads2genome-${length}bp/${sample}_2.sam");
+      system("tophat2 -p $thread -G $gtf -o MergeCirc/juncreads2trans-${length}bp/${sample}_1 $bowtie2Index MergeCirc/juncmap/${sample}_1.candjuncreads-${length}bp.fq");
+      system("tophat2 -p $thread -G $gtf -o MergeCirc/juncreads2trans-${length}bp/${sample}_2 $bowtie2Index MergeCirc/juncmap/${sample}_2.candjuncreads-${length}bp.fq");
+      system("samtools view MergeCirc/juncreads2trans-${length}bp/${sample}_1/accepted_hits.bam  >MergeCirc/juncreads2trans-${length}bp/${sample}_1/accepted_hits.sam");
+      system("samtools view MergeCirc/juncreads2trans-${length}bp/${sample}_2/accepted_hits.bam  >MergeCirc/juncreads2trans-${length}bp/${sample}_2/accepted_hits.sam");
+   }
+}
+
+sub JunReadsCount(){
+   chdir "MergeCirc/juncmap/${length}bp";
+   system("perl ../../../bin/JuncReads.pl");
+   system("perl ../../../bin/Ratio.pl");
+   system("perl ../../../bin/RC.pl");
+   system("perl ../../../bin/JRC.pl");
+   system("perl ../../../bin/Mkbed.pl");
+   chdir "../../../";
+}
+
+sub LinearReadsCount(){
+   chdir "MergeCirc/linearlastmap/MAPQ20";
+   system("perl ../../../bin/LinearReads.pl");
+   system("perl ../../../bin/Ratio.pl");
+   chdir "../../../";
+}
+
+sub Confidentcirc(){
+   chdir "MergeCirc/confident";
+   system("Rscript ../../bin/ConfidentCirc.r") ;
+   chdir "../../";
+}
+
+sub CircAS(@_){
+   my @sample=@_;
+   chdir "MergeCirc/AS-BSJ2";
+   foreach $sample (@sample){
+      system("mkdir $sample");
+      chdir "$sample";
+      system("perl ../../../bin/CircAS/SplitCircIntoChr.pl -i ../../juncmap/${length}bp/${sample}.RC.sorted.bed");
+      system("perl ../../../bin/CircAS/SplitBedIntoChr.pl -i ../../../RNAseq/sortedbed/${sample}.sorted.bed");
+      system("ls | grep circ |grep -v circlist >circchrlist");
+      open FIG,"<circchrlist";
+      while(<FIG>){
+         chomp;
+	 system("perl ../../../bin/CircAS/Pipeline.pl -i $_ -j ../../juncmap/${length}bp/${sample}.juncreads-${length}bp.sam");
+      }
+      system("perl ../../../bin/CircAS/CircJuncRatio.pl");
+      system("mkdir bed");
+      chdir "bed";
+      system("cat ../*circRNA.bed >circRNA.bed");
+      system("perl ../../../../bin/CircAS/MultiExonCirc.pl");
+      system("perl ../../../../bin/CircAS/IntronRetension.pl");
+      system("perl ../../../../bin/CircAS/NovelExon.pl");
+      system("perl ../../../../bin/CircAS/MakeExonIntron.pl");
+      print "circRNA number:\t";
+      system("cut -f 4 circRNA.bed|sort|uniq|wc -l");
+      print "Multi Exon circRNA number:\t";
+      system("cut -f 4 MultiExonCirc.bed|sort|uniq|wc -l");
+      print "Intron Skipping circRNA number:\t";
+      system("cut -f 4 IntronSkipping|sort|uniq|wc -l");
+      print "Intron Retension circRNA number:\t";
+      system("cut -f 4 IntronRetension|sort|uniq|wc -l"); 
+      system("mkdir CircSeq");
+      chdir "CircSeq";
+      system("perl ../../../../../bin/CircAS/CircSeq.pl");
+      chdir "../../../";
+   }
+   chdir "../../";
+}
+
+sub IsoformSwitch(){
+   chdir "MergeCirc/AS-BSJ2/IsoformSwitch";
+   system("cp ../../../bin/IsoformSwitch/* ./");
+   system("bash Runinfo.sh");
+   chdir "../../../";
+}
+
+sub DEcirc(){
+   chdir "DEcirc";
+   system("Rscript ../bin/DESeq2.r");
+   system("perl ../bin/ConfidentDEcirc.pl");
+   chdir "../";
+}
+
+sub CircCluster(@_){
+   my @sample=@_;
+   chdir "MergeCirc/confident/Cluster";
+   foreach $sample (@sample){
+      system("mkdir $sample");
+      chdir "$sample";
+      system("perl ../../../../bin/CircCluster/mkbed.pl -i $sample");   
+      system("bedtools sort -i circ.bed >circ.sorted.bed");
+      system("perl ../../../../bin/CircCluster/Alternative3circ.pl -i $sample");
+      system("perl ../../../../bin/CircCluster/Alternative5circ.pl -i $sample");
+      system("perl ../../../../bin/CircCluster/ClusterCount.pl");
+      chdir "../";
+   }
+   system("mkdir DEcluster");
+   chdir "DEcluster";
+   system("perl ../../../../bin/CircCluster/A3SS.pl");
+   system("perl ../../../../bin/CircCluster/A5SS.pl");
+   system("mkdir ClusterExpression");
+   chdir "ClusterExpression";
+   system("perl ../../../../../bin/CircCluster/Expression.pl");
+   system("Rscript ../../../../../bin/CircCluster/DESeq2-A3SS.r");
+   system("Rscript ../../../../../bin/CircCluster/DESeq2-A5SS.r");
+   chdir "../../";
+   chdir "../../../";
+}
+
+sub CircNetwork(){
+   chdir "DEcirc/CircNetwork";
+   system("mkdir DEup");
+   system("mkdir DEdown");
+   system("perl ../../bin/CircNetwork/DEcircseq.pl");
+   system("targetscan_70.pl $miR_Family_Info DEup/DEup DEup/DEup.miRNA");
+   system("targetscan_70.pl $miR_Family_Info DEdown/DEdown DEdown/DEdown.miRNA");
+   chdir "../../";
+}
+
+sub CircRBP(){
+   chdir "DEcirc/DEcircFlankingIntronRBP";
+   system("perl ../../bin/DEcircFlankingIntronRBP/1-Makebed.pl");
+   system("bash ../../bin/DEcircFlankingIntronRBP/3-bedtools-intersect.sh");
+   system("perl ../../bin/DEcircFlankingIntronRBP/4-CandidateRBP.pl >FlankingRBP");
+   system("Rscript ../../bin/DEcircFlankingIntronRBP/5-Bar.r");
+   chdir "../../";
+}
+
+sub Sailor(){
+   chdir "Sailor";
+   system("cp ../bin/Sailor/1-Sailor.sh ./");
+   system("bash 1-Sailor.sh");
+   chdir "../";
+}
+
+sub CircAtoI(){
+   chdir "Sailor";
+   system("cp ../bin/Sailor/* ./");
+   system("bash Runinfo.sh");
+   chdir "../DEcirc/DEcircFlankingIntronAtoI";
+   system("cp ../../bin/DEcircFlankingIntronAtoI/* ./");
+   system("bash Runinfo.sh");
+}
+
+sub miRTarget(){
+   chdir "RNAseq/Cuffdiff/CummulativePlot";
+   system("cp ../../../bin/miRNATarget/TargetGenelogFC.r ./");
+   system("Rscript TargetGenelogFC.r");
+   chdir "../../../";
+}
+
+sub parse_command_line {
+    if(!@ARGV){usage();}
+    else{
+    while (@ARGV) {
+	$_ = shift @ARGV;
+	if ($_ =~ /^RNAseq$/){
+	   system("mkdir RNAseq");
+	   system("mkdir RNAseq/sortedbam");
+	   system("mkdir RNAseq/sortedbed");
+	   RNAseq(@sample_RM);
+	   RNAseq(@sample_AR);
+	}
+	elsif ($_ =~ /^DEgene$/){
+           DEgene();
+        }
+	elsif ($_ =~ /^CIRCexplorer2$/){ 
+           system("mkdir CIRCexplorer2");
+	   CIRCexplore2(@sample_RM);
+           CIRCexplore2(@sample_AR);
+        }
+	elsif ($_ =~ /^CIRIquant$/){
+	   system("mkdir CIRIquant");
+	   CIRIquant(@sample_RM);
+	   CIRIquant(@sample_AR); 
+        }
+	elsif ($_ =~ /^findcirc$/){
+	   system("mkdir findcirc");
+	   findcirc(@sample_RM);
+	   findcirc(@sample_AR); 
+        }
+	elsif ($_ =~ /^MapSplice$/){
+	   system("mkdir MapSplice");
+	   system("mkdir Rawdata/fastq");
+	   MapSplice(@sample_RM);
+	   MapSplice(@sample_AR);
+        }
+	elsif ($_ =~ /^PseudoRef$/){
+	   system("mkdir MergeCirc");
+	   system("mkdir MergeCirc/circlist");
+	   system("PseudoRef.sh");
+	}
+	elsif ($_ =~ /^Mapping$/){
+	   system("mkdir MergeCirc/juncmap");
+	   system("mkdir MergeCirc/linearlastmap");
+	   Mapping(@sample_RM);
+	   Mapping(@sample_AR); 
+	}
+	elsif ($_ =~ /^BSJreads$/){
+	   BSJreads(@sample_RM);
+           BSJreads(@sample_AR);
+	}
+	elsif ($_ =~ /^Remap$/){
+           system("mkdir MergeCirc/juncreads2genome-${length}bp");
+           system("mkdir MergeCirc/juncreads2trans-${length}bp"); 
+	   Remap(@sample_RM);
+	   Remap(@sample_AR);
+        }
+	elsif ($_ =~ /^ReadsCount$/){
+	   system("mkdir MergeCirc/linearlastmap/MAPQ20");
+	   system("mkdir MergeCirc/juncmap/${length}bp");
+           JunReadsCount();
+	   LinearReadsCount();
+        }
+	elsif ($_ =~ /^Confidentcirc$/){
+	   system("mkdir MergeCirc/confident");
+           Confidentcirc();
+	}
+	elsif ($_ =~ /^CircAS$/){
+	   system("mkdir MergeCirc/AS-BSJ2");
+	   CircAS(@sample_AR);
+	}
+	elsif ($_ =~ /^CircIsoformSwitch$/){
+           system("mkdir MergeCirc/AS-BSJ2/IsoformSwitch");
+           IsoformSwitch();
+        }
+	elsif ($_ =~ /^DEcirc$/){
+           system("mkdir DEcirc");
+           DEcirc();
+        }
+	elsif ($_ =~ /^CircCluster$/){
+           system("mkdir MergeCirc/confident/Cluster");
+	   CircCluster(@sample_AR);	   
+	}
+	elsif ($_ =~ /^CircNetwork$/){
+	   system("mkdir DEcirc/CircNetwork");
+	   CircNetwork();
+	}
+	elsif ($_ =~ /^CircRBP$/){
+	   system("mkdir DEcirc/DEcircFlankingIntronRBP");
+	   CircRBP();
+	}
+	elsif ($_ =~ /^Sailor$/){
+	   system("mkdir Sailor");
+	   Sailor();
+        }
+	elsif ($_ =~ /^CircAtoI$/){
+           system("mkdir DEcirc/DEcircFlankingIntronAtoI");
+           CircAtoI();
+        }
+	elsif ($_ =~ /^miRTarget$/){
+           system("mkdir RNAseq/Cuffdiff/CummulativePlot");
+           miRTarget();
+        }
+	else {
+	    print "Undefined command: $_\n";
+	    usage();
+	}
+    }
+    }
+}
+
+sub usage {
+   print STDERR <<EOQ; 
+
+CARP (CircRNA identification by A-tailing RNase R and Pseudo-reference alignment)
+
+Usage:  CARP <Command>
+
+Command: RNAseq
+	 DEgene
+         CIRCexplorer2
+         CIRIquant
+         findcirc
+         MapSplice
+         PseudoRef
+         Mapping
+	 BSJreads
+	 Remap
+	 ReadsCount
+         Confidentcirc
+         CircAS
+	 CircIsoformSwitch
+         DEcirc
+	 CircCluster
+         CircNetwork
+	 CircRBP
+	 Sailor
+	 CircAtoI
+	 miRTarget
+    
+EOQ
+exit(0);
+}

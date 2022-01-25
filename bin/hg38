@@ -1,0 +1,14 @@
+name: hg38
+
+tools:
+  bwa: /projects/compbio/users/byao5/Software/bwa-0.7.17/bwa
+  hisat2: /projects/compbio/users/byao5/Software/hisat2-2.2.1/hisat2
+  stringtie: /projects/compbio/users/byao5/Software/stringtie-2.1.4/stringtie
+  samtools: /projects/compbio/users/byao5/local/bin/samtools
+
+reference:
+  fasta: /projects/compbio/users/byao5/GenomeIndex/iGenome/Homo_sapiens/UCSC/hg38/Sequence/WholeGenomeFasta/genome.fa
+  gtf: /projects/compbio/users/byao5/GenomeIndex/iGenome/Homo_sapiens/UCSC/hg38/Annotation/Genes/genes.gtf
+  bwa_index: /projects/compbio/users/byao5/GenomeIndex/bwa_indexes/hg38/genome.fa
+  hisat_index: /projects/compbio/users/byao5/GenomeIndex/hisat2_indexes/hg38/genome
+
